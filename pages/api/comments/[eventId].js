@@ -1,5 +1,19 @@
-function handler(req, res) {
+import {
+  connectDatabase,
+  insertDocument,
+  getAllDocuments,
+} from "../../../helpers/db-utils";
+
+async function handler(req, res) {
   const eventId = req.query.eventId;
+
+  let client;
+
+  try {
+    client = await connectDatabase();
+  } catch (error) {
+    return res.status(500).json({ message: "Connecting to database failed!" });
+  }
 
   if (req.method === "POST") {
     const { email, name, text } = req.body;
@@ -9,29 +23,52 @@ function handler(req, res) {
       !name ||
       name.trim() === "" ||
       !text ||
-      !text.trim() === ""
+      text.trim() === ""
     ) {
-      res.status(422).json({ message: "Invalid input" });
-      return;
+      client.close();
+      return res.status(422).json({ message: "Invalid input" });
     }
 
     const newComment = {
-      id: new Date().toISOString(),
       email,
       name,
       text,
+      eventId,
     };
 
-    console.log(newComment);
-    res.status(201).json({ message: "add comment", comment: newComment });
+    try {
+      const result = await insertDocument(client, "comments", newComment);
+
+      newComment._id = result.insertedId;
+
+      client.close();
+
+      return res.status(201).json({
+        message: "Comment added",
+        comment: newComment,
+      });
+    } catch (error) {
+      client.close();
+      return res.status(500).json({ message: "Insert comment failed" });
+    }
   }
 
   if (req.method === "GET") {
-    const dummyList = [
-      { id: "c1", name: "Max", text: "A first comment!" },
-      { id: "c2", name: "Manual", text: "A second comment!" },
-    ];
-    res.status(200).json({ comments: dummyList });
+    try {
+      const documents = await getAllDocuments(
+        client,
+        "comments",
+        { eventId: eventId },
+        { _id: -1 },
+      );
+
+      client.close();
+
+      return res.status(200).json({ comments: documents });
+    } catch (error) {
+      client.close();
+      return res.status(500).json({ message: "Getting comments failed." });
+    }
   }
 }
 
